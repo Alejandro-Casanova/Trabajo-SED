@@ -44,17 +44,35 @@
 I2C_HandleTypeDef hi2c1;
 
 /* USER CODE BEGIN PV */
+// VARIABLES DISPLAY
+//Direcciónes I2C
 uint8_t slave_address_write = 0x78;
 uint8_t slave_address_read = 0x78 | 0x01;
 
-bool COM_ERROR = false;
+bool COM_ERROR = false; //Indica error de comunicación I2C con el display
 #define alto_display 64
 #define ancho_display 128
 #define n_paginas 8
-uint8_t buffer[n_paginas * ancho_display];
+uint8_t buffer[n_paginas * ancho_display]; //Información que se cargará en la SRAM del display
 
 uint8_t i2cTxBuf[2];
 uint8_t i2cRxBuf;
+
+//VARIABLES JUEGO
+uint8_t map_layout[ancho_display][alto_display];
+struct modulo{
+	uint8_t x;
+	uint8_t y;
+};
+struct modulo serpiente[200];
+uint8_t longitud = 10;
+#define S_DERECHA 'r'
+#define S_IZQUIERDA 'i'
+#define S_ARRIBA 'u'
+#define S_ABAJO 'd'
+uint8_t sentido = S_DERECHA;
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,11 +80,22 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
-bool oled_command(uint8_t command);
-void oled_init();
-void alimentacion(bool enable);
-void clear(bool enable);
-void display();
+//FUNCIONES OLED
+bool oled_command(uint8_t command); //Envía un comando simple al display (NO UTILIZADO)
+void oled_init(); //Inicialización Obligatoria
+void alimentacion(bool enable); //Enciende o apaga el display
+void clear(bool enable); //Carga todos los valores del buffer con un mismo valor
+void display(); //Carga el buffer en la SRAM del display
+void dibuja_pixel(uint8_t x, uint8_t y, bool borra); //Dibuja/Borra un sólo pixel del buffer
+void flash_screen(); //Hace parpadear la pantalla (Todo ON/Valores SRAM)
+
+//FUNCIONES JUEGO
+void clearLayout(); //Limpia el layout
+void setLayout(); //Dibuja las paredes y BORRA LO DEMÁS
+void init_serpiente(); //Inicializa la serpiente en posicion inicial
+void setSerpiente(); //Dibuja la serpiente en el layout
+void transferMapToBuffer(); //Carga el mapa en el buffer que luego se envía al display
+void avanzaSerpiente(); //Hace avanzar la serpiente una casilla (en el layout)
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -106,10 +135,14 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
 
-  oled_init();
+  oled_init(); //INICIALIZACIÓN OBLIGATORIA
+  init_serpiente();
 
-
-  i2cTxBuf[0] = 0x00; //Command
+  //clearLayout(); //setLayout() lo hace
+  setLayout();
+  setSerpiente();
+  transferMapToBuffer();
+  display();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -119,14 +152,10 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  i2cTxBuf[1] = 0xA4;
-	  if(HAL_I2C_Master_Transmit(&hi2c1, slave_address_write, i2cTxBuf, 2, HAL_MAX_DELAY) != HAL_OK){
-		  COM_ERROR = true;
-	  }
-	  HAL_Delay(500);
-	  i2cTxBuf[1] = 0xA5;
-	  HAL_I2C_Master_Transmit(&hi2c1, slave_address_write, i2cTxBuf, 2, HAL_MAX_DELAY);
-	  HAL_Delay(500);
+	  //flash_screen();
+
+	  HAL_Delay(5000);
+	  alimentacion(false);
   }
   /* USER CODE END 3 */
 }
@@ -331,6 +360,69 @@ void display(){
 
 	}
 }
+void dibuja_pixel(uint8_t x, uint8_t y, bool borra){
+	if (x >= ancho_display || y >= alto_display)
+		return;
+	if(!borra)
+		buffer[x + (y / 8) * ancho_display] |= (1 << (y & 7)); // set bit
+	else
+		buffer[x + (y / 8) * ancho_display] &= ~(1 << (y & 7)); // clear bit
+}
+void flash_screen(){
+	i2cTxBuf[0] = 0x00; //Command
+	i2cTxBuf[1] = 0xA4;
+	if(HAL_I2C_Master_Transmit(&hi2c1, slave_address_write, i2cTxBuf, 2, HAL_MAX_DELAY) != HAL_OK){
+	  COM_ERROR = true;
+	}
+	HAL_Delay(500);
+	i2cTxBuf[1] = 0xA5;
+	HAL_I2C_Master_Transmit(&hi2c1, slave_address_write, i2cTxBuf, 2, HAL_MAX_DELAY);
+	HAL_Delay(500);
+}
+
+//FUNCIONES JUEGO
+void clearLayout(){
+	for(int i = 0; i < ancho_display; i++){
+		memset(map_layout[i], 0, sizeof(&map_layout[i]));
+	}
+}
+
+void setLayout(){
+	for(int i = 0; i < ancho_display; i++){
+		for(int j = 0; j < alto_display; j++){
+			if(i == 0 || i == (ancho_display - 1) || j == 0 || j == (alto_display - 1))
+				map_layout[i][j] = 1;
+			else
+				map_layout[i][j] = 0;
+		}
+	}
+}
+
+void init_serpiente(){
+	sentido = S_DERECHA;
+	for(int i = 0; i < longitud; i++){
+		serpiente[i].x = ancho_display / 2 -i;
+		serpiente[i].y = alto_display / 2;
+	}
+}
+
+void setSerpiente(){
+	for(int i = 0; i < longitud; i++){
+		map_layout[serpiente[i].x][serpiente[i].y] = 1;
+	}
+}
+
+void transferMapToBuffer(){
+	for(int i = 0; i < ancho_display; i++){
+		for(int j = 0; j < alto_display; j++){
+			if(map_layout[i][j] == 0)
+				dibuja_pixel(i, j, true);
+			else
+				dibuja_pixel(i, j, false);
+		}
+	}
+}
+
 /* USER CODE END 4 */
 
 /**
