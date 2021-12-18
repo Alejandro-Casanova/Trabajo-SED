@@ -65,12 +65,12 @@ struct modulo{
 	uint8_t y;
 };
 struct modulo serpiente[200];
-uint8_t longitud = 10;
-#define S_DERECHA 'r'
-#define S_IZQUIERDA 'i'
-#define S_ARRIBA 'u'
-#define S_ABAJO 'd'
-uint8_t sentido = S_DERECHA;
+uint8_t s_Longitud = 10;
+#define s_DERECHA 'r'
+#define s_IZQUIERDA 'i'
+#define s_ARRIBA 'u'
+#define s_ABAJO 'd'
+uint8_t s_Sentido = s_DERECHA;
 
 
 /* USER CODE END PV */
@@ -95,6 +95,7 @@ void setLayout(); //Dibuja las paredes y BORRA LO DEMÁS
 void init_serpiente(); //Inicializa la serpiente en posicion inicial
 void setSerpiente(); //Dibuja la serpiente en el layout
 void transferMapToBuffer(); //Carga el mapa en el buffer que luego se envía al display
+bool giraSerpiente(uint8_t indicacion); //Cambia la dirección de la serpiente (Hay macros con cada dirección) Devuelve false si no se pudo ejecutar el giro
 void avanzaSerpiente(); //Hace avanzar la serpiente una casilla (en el layout)
 /* USER CODE END PFP */
 
@@ -152,10 +153,47 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  //flash_screen();
+	  for(int i = 0; i < 10; i++){
+		  avanzaSerpiente();
+		  setLayout();
+		  setSerpiente();
+		  transferMapToBuffer();
+		  display();
+		  HAL_Delay(50);
+	  }
+	  giraSerpiente(s_IZQUIERDA); //No tiene efecto
+	  giraSerpiente(s_ABAJO);
+	  giraSerpiente(s_ARRIBA); //No tiene efecto
+	  for(int i = 0; i < 10; i++){
+		  avanzaSerpiente();
+		  setLayout();
+		  setSerpiente();
+		  transferMapToBuffer();
+		  display();
+		  HAL_Delay(50);
+	  }
+	  giraSerpiente(s_IZQUIERDA);
+	  for(int i = 0; i < 10; i++){
+		  avanzaSerpiente();
+		  setLayout();
+		  setSerpiente();
+		  transferMapToBuffer();
+		  display();
+		  HAL_Delay(50);
+	  }
+	  giraSerpiente(s_ARRIBA);
+	  for(int i = 0; i < 10; i++){
+		  avanzaSerpiente();
+		  setLayout();
+		  setSerpiente();
+		  transferMapToBuffer();
+		  display();
+		  HAL_Delay(50);
+	  }
+	  giraSerpiente(s_DERECHA);
 
-	  HAL_Delay(5000);
-	  alimentacion(false);
+	  //HAL_Delay(5000);
+	  //alimentacion(false);
   }
   /* USER CODE END 3 */
 }
@@ -399,15 +437,15 @@ void setLayout(){
 }
 
 void init_serpiente(){
-	sentido = S_DERECHA;
-	for(int i = 0; i < longitud; i++){
+	s_Sentido = s_DERECHA;
+	for(int i = 0; i < s_Longitud; i++){
 		serpiente[i].x = ancho_display / 2 -i;
 		serpiente[i].y = alto_display / 2;
 	}
 }
 
 void setSerpiente(){
-	for(int i = 0; i < longitud; i++){
+	for(int i = 0; i < s_Longitud; i++){
 		map_layout[serpiente[i].x][serpiente[i].y] = 1;
 	}
 }
@@ -420,6 +458,49 @@ void transferMapToBuffer(){
 			else
 				dibuja_pixel(i, j, false);
 		}
+	}
+}
+
+bool giraSerpiente(uint8_t indicacion){
+	if(s_Sentido == s_IZQUIERDA || s_Sentido == s_DERECHA){ //Movimiento Horizontal
+		if(indicacion == s_ARRIBA || indicacion == s_ABAJO){ //Giro perpendicular
+			s_Sentido = indicacion;
+			return true;
+		}
+	}else //Movimiento Vertical
+		if(indicacion == s_IZQUIERDA || indicacion == s_DERECHA){ //Giro perpendicular
+			s_Sentido = indicacion;
+			return true;
+	}
+
+	return false; //No se ejecutó giro
+}
+
+void avanzaSerpiente(){
+	if( (serpiente[0].x >= ancho_display -2) ||
+		(serpiente[0].x <= 2) ||
+		(serpiente[0].y >= alto_display -2) ||
+		(serpiente[0].y <= 2) )
+		return; //Si la serpiente alcanza alguno de los márgenes, se detiene
+
+	for(int i = 0; i < s_Longitud; i++){
+		serpiente[s_Longitud - i] = serpiente[s_Longitud - i - 1];
+	}
+	//No comprueba si el sentido es apropiado (dicha comprobación se hace en la función giraSerpiente()
+	switch(s_Sentido){
+		case s_DERECHA:
+			serpiente[0].x += 1;
+		break;
+		case s_IZQUIERDA:
+			serpiente[0].x -= 1;
+		break;
+		case s_ARRIBA:
+			serpiente[0].y -= 1;
+		break;
+		case s_ABAJO:
+			serpiente[0].y += 1;
+		break;
+
 	}
 }
 
