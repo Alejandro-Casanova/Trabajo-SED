@@ -43,6 +43,8 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
+TIM_HandleTypeDef htim7;
+
 /* USER CODE BEGIN PV */
 // VARIABLES DISPLAY
 //Direcciónes I2C
@@ -60,12 +62,17 @@ uint8_t i2cRxBuf;
 
 //VARIABLES JUEGO
 uint8_t map_layout[ancho_display][alto_display];
+bool refresh = false;
+
+//Cuerpo de la serpiente
 struct modulo{
 	uint8_t x;
 	uint8_t y;
 };
 struct modulo serpiente[200];
 uint8_t s_Longitud = 10;
+
+//Dirección de la serpiente
 #define s_DERECHA 'r'
 #define s_IZQUIERDA 'i'
 #define s_ARRIBA 'u'
@@ -79,6 +86,8 @@ uint8_t s_Sentido = s_DERECHA;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_TIM7_Init(void);
+
 /* USER CODE BEGIN PFP */
 //FUNCIONES OLED
 bool oled_command(uint8_t command); //Envía un comando simple al display (NO UTILIZADO)
@@ -90,12 +99,14 @@ void dibuja_pixel(uint8_t x, uint8_t y, bool borra); //Dibuja/Borra un sólo pix
 void flash_screen(); //Hace parpadear la pantalla (Todo ON/Valores SRAM)
 
 //FUNCIONES JUEGO
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim); //Callback encargada de avanzar el juego y refrescar la pantalla cada 50ms
 void clearLayout(); //Limpia el layout
-void setLayout(); //Dibuja las paredes y BORRA LO DEMÁS
+void setLayout(); //Dibuja las paredes y BORRA LO DEM�?S
 void init_serpiente(); //Inicializa la serpiente en posicion inicial
 void setSerpiente(); //Dibuja la serpiente en el layout
 void transferMapToBuffer(); //Carga el mapa en el buffer que luego se envía al display
 bool giraSerpiente(uint8_t indicacion); //Cambia la dirección de la serpiente (Hay macros con cada dirección) Devuelve false si no se pudo ejecutar el giro
+void giraDerecha(); //Gira la serpiente 90º a la derecha
 void avanzaSerpiente(); //Hace avanzar la serpiente una casilla (en el layout)
 /* USER CODE END PFP */
 
@@ -133,6 +144,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_I2C1_Init();
+  MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
 
 
@@ -144,56 +156,72 @@ int main(void)
   setSerpiente();
   transferMapToBuffer();
   display();
+
+  HAL_TIM_Base_Start_IT(&htim7);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  int a = 0;
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  for(int i = 0; i < 10; i++){
-		  avanzaSerpiente();
-		  setLayout();
-		  setSerpiente();
-		  transferMapToBuffer();
-		  display();
-		  HAL_Delay(50);
-	  }
-	  giraSerpiente(s_IZQUIERDA); //No tiene efecto
-	  giraSerpiente(s_ABAJO);
-	  giraSerpiente(s_ARRIBA); //No tiene efecto
-	  for(int i = 0; i < 10; i++){
-		  avanzaSerpiente();
-		  setLayout();
-		  setSerpiente();
-		  transferMapToBuffer();
-		  display();
-		  HAL_Delay(50);
-	  }
-	  giraSerpiente(s_IZQUIERDA);
-	  for(int i = 0; i < 10; i++){
-		  avanzaSerpiente();
-		  setLayout();
-		  setSerpiente();
-		  transferMapToBuffer();
-		  display();
-		  HAL_Delay(50);
-	  }
-	  giraSerpiente(s_ARRIBA);
-	  for(int i = 0; i < 10; i++){
-		  avanzaSerpiente();
-		  setLayout();
-		  setSerpiente();
-		  transferMapToBuffer();
-		  display();
-		  HAL_Delay(50);
-	  }
-	  giraSerpiente(s_DERECHA);
+//	  for(int i = 0; i < 10; i++){
+//		  avanzaSerpiente();
+//		  setLayout();
+//		  setSerpiente();
+//		  transferMapToBuffer();
+//		  display();
+//		  HAL_Delay(50);
+//	  }
+//	  giraSerpiente(s_IZQUIERDA); //No tiene efecto
+//	  giraSerpiente(s_ABAJO);
+//	  giraSerpiente(s_ARRIBA); //No tiene efecto
+//	  for(int i = 0; i < 10; i++){
+//		  avanzaSerpiente();
+//		  setLayout();
+//		  setSerpiente();
+//		  transferMapToBuffer();
+//		  display();
+//		  HAL_Delay(50);
+//	  }
+//	  giraSerpiente(s_IZQUIERDA);
+//	  for(int i = 0; i < 10; i++){
+//		  avanzaSerpiente();
+//		  setLayout();
+//		  setSerpiente();
+//		  transferMapToBuffer();
+//		  display();
+//		  HAL_Delay(50);
+//	  }
+//	  giraSerpiente(s_ARRIBA);
+//	  for(int i = 0; i < 10; i++){
+//		  avanzaSerpiente();
+//		  setLayout();
+//		  setSerpiente();
+//		  transferMapToBuffer();
+//		  display();
+//		  HAL_Delay(50);
+//	  }
+//	  giraSerpiente(s_DERECHA);
+	  while(a < 100){
+		  if(refresh){
+			  avanzaSerpiente();
+			  setLayout();
+			  setSerpiente();
+			  transferMapToBuffer();
+			  display();
 
-	  //HAL_Delay(5000);
-	  //alimentacion(false);
+			  a++;
+			  refresh = false;
+			  if((a % 10) == 0)
+				  giraDerecha();
+		  }
+	  }
+	  HAL_Delay(5000);
+	  alimentacion(false);
   }
   /* USER CODE END 3 */
 }
@@ -272,6 +300,44 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief TIM7 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM7_Init(void)
+{
+
+  /* USER CODE BEGIN TIM7_Init 0 */
+
+  /* USER CODE END TIM7_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM7_Init 1 */
+
+  /* USER CODE END TIM7_Init 1 */
+  htim7.Instance = TIM7;
+  htim7.Init.Prescaler = 15999;
+  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim7.Init.Period = 49;
+  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM7_Init 2 */
+
+  /* USER CODE END TIM7_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -285,6 +351,11 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim){
+	if (htim->Instance == TIM7)
+			refresh = true;
+}
+
 bool oled_command(uint8_t command){
 	i2cTxBuf[0] = 0x00;
 	i2cTxBuf[1] = command;
@@ -474,6 +545,17 @@ bool giraSerpiente(uint8_t indicacion){
 	}
 
 	return false; //No se ejecutó giro
+}
+
+void giraDerecha(){
+	if(s_Sentido == s_DERECHA)
+		s_Sentido = s_ABAJO;
+	else if(s_Sentido == s_ABAJO)
+		s_Sentido = s_IZQUIERDA;
+	else if(s_Sentido == s_IZQUIERDA)
+		s_Sentido = s_ARRIBA;
+	else
+		s_Sentido = s_DERECHA;
 }
 
 void avanzaSerpiente(){
