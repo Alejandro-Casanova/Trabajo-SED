@@ -24,6 +24,9 @@
 /* USER CODE BEGIN Includes */
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -68,9 +71,12 @@ bool refresh = false;
 struct modulo{
 	uint8_t x;
 	uint8_t y;
-};
-struct modulo serpiente[200];
+}typedef modulo;
+modulo serpiente[200];
 uint8_t s_Longitud = 10;
+//Frutas para comer por la serpiente
+#define N_FRUTAS 10
+modulo frutas[N_FRUTAS];
 
 //Dirección de la serpiente
 #define s_DERECHA 'r'
@@ -101,13 +107,17 @@ void flash_screen(); //Hace parpadear la pantalla (Todo ON/Valores SRAM)
 //FUNCIONES JUEGO
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef* htim); //Callback encargada de avanzar el juego y refrescar la pantalla cada 50ms
 void clearLayout(); //Limpia el layout
-void setLayout(); //Dibuja las paredes y BORRA LO DEM�?S
+void setLayout(); //Dibuja las paredes y BORRA LO DEMÁS
 void init_serpiente(); //Inicializa la serpiente en posicion inicial
+void init_frutas(); //Inicializa las posiciones iniciales de las frutas (debe ejecutarse después de setSerpiente)
 void setSerpiente(); //Dibuja la serpiente en el layout
+void setFrutas(); //Dibuja las frutas en el layout
 void transferMapToBuffer(); //Carga el mapa en el buffer que luego se envía al display
 bool giraSerpiente(uint8_t indicacion); //Cambia la dirección de la serpiente (Hay macros con cada dirección) Devuelve false si no se pudo ejecutar el giro
 void giraDerecha(); //Gira la serpiente 90º a la derecha
 void avanzaSerpiente(); //Hace avanzar la serpiente una casilla (en el layout)
+int colision(uint8_t x, uint8_t y); //Devuelve 1 si la colisión es con una fruta, 2 con pared, -1 si es la propia serpiente y 0 si no hay colisión
+void gameOver();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -147,13 +157,15 @@ int main(void)
   MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
 
-
+  srand((unsigned)time(0)); //Inicializa generador de números aleatorios
   oled_init(); //INICIALIZACIÓN OBLIGATORIA
   init_serpiente();
 
   //clearLayout(); //setLayout() lo hace
   setLayout();
   setSerpiente();
+  init_frutas();
+  setFrutas();
   transferMapToBuffer();
   display();
 
@@ -211,6 +223,7 @@ int main(void)
 			  avanzaSerpiente();
 			  setLayout();
 			  setSerpiente();
+			  setFrutas();
 			  transferMapToBuffer();
 			  display();
 
@@ -515,9 +528,28 @@ void init_serpiente(){
 	}
 }
 
+void init_frutas(){
+	uint8_t x, y;
+	for(int i = 0; i < N_FRUTAS;){
+		x = (rand() % (ancho_display - 20)) + 10;
+		y = (rand() % (alto_display - 20)) + 10;
+		if(map_layout[x][y] == 0){
+			frutas[i].x = x;
+			frutas[i].y = y;
+			i++;
+		}
+	}
+}
+
 void setSerpiente(){
 	for(int i = 0; i < s_Longitud; i++){
 		map_layout[serpiente[i].x][serpiente[i].y] = 1;
+	}
+}
+
+void setFrutas(){
+	for(int i = 0; i < N_FRUTAS; i++){
+		map_layout[frutas[i].x][frutas[i].y] = 1;
 	}
 }
 
@@ -559,15 +591,7 @@ void giraDerecha(){
 }
 
 void avanzaSerpiente(){
-	if( (serpiente[0].x >= ancho_display -2) ||
-		(serpiente[0].x <= 2) ||
-		(serpiente[0].y >= alto_display -2) ||
-		(serpiente[0].y <= 2) )
-		return; //Si la serpiente alcanza alguno de los márgenes, se detiene
 
-	for(int i = 0; i < s_Longitud; i++){
-		serpiente[s_Longitud - i] = serpiente[s_Longitud - i - 1];
-	}
 	//No comprueba si el sentido es apropiado (dicha comprobación se hace en la función giraSerpiente()
 	switch(s_Sentido){
 		case s_DERECHA:
@@ -584,7 +608,56 @@ void avanzaSerpiente(){
 		break;
 
 	}
+
+	switch(colision(serpiente[0].x, serpiente[0].y)){
+	case -1: //Serpiente
+	case 2: //Pared
+		gameOver();
+		break;
+	case 0: //Sin Colisión
+		break;
+	case 1: //Fruta (serpiente crece 1)
+		s_Longitud++;
+		serpiente[s_Longitud - 1].x = serpiente[s_Longitud - 2].x - (serpiente[s_Longitud - 3].x - serpiente[s_Longitud - 2].x);
+		serpiente[s_Longitud - 1].y = serpiente[s_Longitud - 2].y - (serpiente[s_Longitud - 3].y - serpiente[s_Longitud - 2].y);
+		break;
+	}
+
+	/*
+	if( (serpiente[0].x >= ancho_display -2) ||
+		(serpiente[0].x <= 2) ||
+		(serpiente[0].y >= alto_display -2) ||
+		(serpiente[0].y <= 2) )
+		return; //Si la serpiente alcanza alguno de los márgenes, se detiene
+	*/
+	for(int i = 0; i < s_Longitud; i++){
+		serpiente[s_Longitud - i] = serpiente[s_Longitud - i - 1];
+	}
+
 }
+
+int colision(uint8_t x, uint8_t y){
+
+	if(x == ancho_display - 1 || x == 0 || y == alto_display - 1 || y == 0) //Colisión con pared
+		return 2;
+
+	for(int i = 0; i < N_FRUTAS; i++){
+		if(frutas[i].x == x && frutas[i].y == y) //Comprueba colisión con fruta
+			return 1;
+	}
+
+	for(int i = 0; i < s_Longitud; i++){ //Colisión con serpiente
+		if(serpiente[i].x == x && serpiente[i].y == y)
+			return -1;
+	}
+
+	return 0;
+}
+
+void gameOver(){
+	return;
+}
+
 
 /* USER CODE END 4 */
 
