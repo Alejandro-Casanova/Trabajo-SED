@@ -155,12 +155,20 @@ void initGame();
 //FUNCIONES EXTI
 bool debounce(volatile bool* boton);
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+	HAL_NVIC_DisableIRQ(EXTI0_IRQn);
+	HAL_NVIC_DisableIRQ(EXTI1_IRQn);
+	HAL_NVIC_DisableIRQ(EXTI2_IRQn);
+
 	if (GPIO_Pin == GPIO_PIN_0)
 			boton = true;
 	else if (GPIO_Pin == GPIO_PIN_1)
 		giraDerecha();
 	else if (GPIO_Pin == GPIO_PIN_2)
 		giraIzquierda();
+
+	HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+	HAL_NVIC_EnableIRQ(EXTI1_IRQn);
+	HAL_NVIC_EnableIRQ(EXTI2_IRQn);
 }
 
 //FUNCIONES ADC Y DMA
@@ -214,26 +222,21 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   oled_init(); //INICIALIZACIÓN OBLIGATORIA
-
+  /* USER CODE END 2 */
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
   initGame();
-
   HAL_TIM_Base_Start_IT(&htim7);
   HAL_ADC_Start_DMA(&hadc1, &adc_buffer, 1);
   uint8_t last_pot_read = pot_read;
-  /* USER CODE END 2 */
 
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  int a = 0;
   while (1)
   {
     /* USER CODE END WHILE */
-
     /* USER CODE BEGIN 3 */
-
 	  uint32_t count = HAL_GetTick();
-	  while(HAL_GetTick() - count < 120000){ //Se apaga automáticamente para ahorrar energía, cuando termina el bucle
-
+	  while(HAL_GetTick() - count < 120000){ //Se apaga automáticamente para ahorrar energía,
+		  	  	  	  	  	  	  	  	  	 //cuando termina el bucle
 		  //Avanza el juego 1 "frame"
 		  if(refresh){
 			  avanzaSerpiente();
@@ -242,15 +245,12 @@ int main(void)
 			  setFrutas();
 			  transferMapToBuffer();
 			  display();
-
 			  refresh = false;
 		  }
 
-		  //Gira si el jugador o indica
-		  HAL_NVIC_DisableIRQ(EXTI0_IRQn);
+		  //Gira si el jugador lo indica (pulsador del micro)
 		  if(debounce(&boton))
 			  giraDerecha();
-		  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 
 		  //Ajusta el contraste si el valor del potenciómetro ha cambiado
 		  if(abs(last_pot_read - pot_read) > 5){
@@ -261,7 +261,7 @@ int main(void)
 		  }
 	  }
 	  HAL_Delay(5000);
-	  alimentacion(false);
+	  alimentacion(false); //Apaga el display al salir del bucle
   }
   /* USER CODE END 3 */
 }
