@@ -24,11 +24,10 @@
 /* USER CODE BEGIN Includes */
 #include <stdbool.h>
 #include <string.h>
-/*
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
-*/
+//#include <time.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,6 +45,9 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+
 I2C_HandleTypeDef hi2c1;
 
 RNG_HandleTypeDef hrng;
@@ -74,7 +76,7 @@ uint8_t buffer[n_paginas * ancho_display]; //Información que se cargará en la 
 uint8_t map_layout[ancho_display][alto_display]; //Matriz 2D del mapa del juego, implementado de esta forma por
 												 //comodidad. Cada entero almacenará '0' o '1' para indicar bit
 												 //encendido o apagado
-bool refresh = false; //Actualizado por interrupciones de teporizador, indicará que el juego debe avanzar un
+volatile bool refresh = false; //Actualizado por interrupciones de teporizador, indicará que el juego debe avanzar un
 				      //frame y que el display debe ser actualizado
 
 //Cuerpo de la serpiente
@@ -99,7 +101,11 @@ modulo frutas[N_FRUTAS]; //Contiene todas las frutas actuales
 uint8_t s_Sentido = s_DERECHA; //Almacena el estado de la serpiente (en qué dirección se está moviendo).
 
 //VARIABLES BOTON
-bool boton = false;
+volatile bool boton = false;
+
+//VARIABLES POTENCIÓMETRO
+uint32_t adc_buffer = 0;
+uint8_t pot_read = 0;
 
 /* USER CODE END PV */
 
@@ -109,6 +115,8 @@ static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM7_Init(void);
 static void MX_RNG_Init(void);
+static void MX_DMA_Init(void);
+static void MX_ADC1_Init(void);
 static void MX_UART4_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -144,10 +152,23 @@ int colision(uint8_t x, uint8_t y); //Devuelve 1 si la colisión es con una frut
 void gameOver();
 void initGame();
 
-//FUNCIONES PULSADOR
+//FUNCIONES EXTI
 bool debounce(volatile bool* boton);
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin);
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+	if (GPIO_Pin == GPIO_PIN_0)
+			boton = true;
+	else if (GPIO_Pin == GPIO_PIN_1)
+		giraDerecha();
+	else if (GPIO_Pin == GPIO_PIN_2)
+		giraIzquierda();
+}
 
+//FUNCIONES ADC Y DMA
+void HAL_ADC_ConvCpltCallback (ADC_HandleTypeDef * hadc){
+	if (hadc->Instance == ADC1){
+		pot_read = adc_buffer;;
+	}
+}
 
 /* USER CODE END PFP */
 
@@ -187,23 +208,18 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM7_Init();
   MX_RNG_Init();
+  MX_DMA_Init();
+  MX_ADC1_Init();
   MX_UART4_Init();
   /* USER CODE BEGIN 2 */
 
   oled_init(); //INICIALIZACIÓN OBLIGATORIA
-//  init_serpiente();
-//
-//  //clearLayout(); //setLayout() lo hace
-//  setLayout();
-//  setSerpiente();
-//  init_frutas();
-//  setFrutas();
-//  transferMapToBuffer();
-//  display();
 
   initGame();
 
   HAL_TIM_Base_Start_IT(&htim7);
+  HAL_ADC_Start_DMA(&hadc1, &adc_buffer, 1);
+  uint8_t last_pot_read = pot_read;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -214,66 +230,11 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-//	  for(int i = 0; i < 10; i++){
-//		  avanzaSerpiente();
-//		  setLayout();
-//		  setSerpiente();
-//		  transferMapToBuffer();
-//		  display();
-//		  HAL_Delay(50);
-//	  }
-//	  giraSerpiente(s_IZQUIERDA); //No tiene efecto
-//	  giraSerpiente(s_ABAJO);
-//	  giraSerpiente(s_ARRIBA); //No tiene efecto
-//	  for(int i = 0; i < 10; i++){
-//		  avanzaSerpiente();
-//		  setLayout();
-//		  setSerpiente();
-//		  transferMapToBuffer();
-//		  display();
-//		  HAL_Delay(50);
-//	  }
-//	  giraSerpiente(s_IZQUIERDA);
-//	  for(int i = 0; i < 10; i++){
-//		  avanzaSerpiente();
-//		  setLayout();
-//		  setSerpiente();
-//		  transferMapToBuffer();
-//		  display();
-//		  HAL_Delay(50);
-//	  }
-//	  giraSerpiente(s_ARRIBA);
-//	  for(int i = 0; i < 10; i++){
-//		  avanzaSerpiente();
-//		  setLayout();
-//		  setSerpiente();
-//		  transferMapToBuffer();
-//		  display();
-//		  HAL_Delay(50);
-//	  }
-//	  giraSerpiente(s_DERECHA);
-
-
-	  /*
-	  while(a < 100){
-		  if(refresh){
-			  avanzaSerpiente();
-			  setLayout();
-			  setSerpiente();
-			  setFrutas();
-			  transferMapToBuffer();
-			  display();
-
-			  a++;
-			  refresh = false;
-			  if((a % 10) == 0)
-				  giraDerecha();
-		  }
-	  }
-	  */
 
 	  uint32_t count = HAL_GetTick();
-	  while(HAL_GetTick() - count < 30000){
+	  while(HAL_GetTick() - count < 120000){ //Se apaga automáticamente para ahorrar energía, cuando termina el bucle
+
+		  //Avanza el juego 1 "frame"
 		  if(refresh){
 			  avanzaSerpiente();
 			  setLayout();
@@ -283,8 +244,20 @@ int main(void)
 			  display();
 
 			  refresh = false;
-			  if(debounce(&boton))
-				  giraDerecha();
+		  }
+
+		  //Gira si el jugador o indica
+		  HAL_NVIC_DisableIRQ(EXTI0_IRQn);
+		  if(debounce(&boton))
+			  giraDerecha();
+		  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+
+		  //Ajusta el contraste si el valor del potenciómetro ha cambiado
+		  if(abs(last_pot_read - pot_read) > 5){
+			  HAL_ADC_Stop_DMA(&hadc1);
+			  last_pot_read = pot_read;
+			  setContrast(pot_read);
+			  HAL_ADC_Start_DMA(&hadc1, &adc_buffer, 1);
 		  }
 	  }
 	  HAL_Delay(5000);
@@ -335,6 +308,56 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+  /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
+  hadc1.Init.Resolution = ADC_RESOLUTION_8B;
+  hadc1.Init.ScanConvMode = ENABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_3;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_480CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -465,6 +488,22 @@ static void MX_UART4_Init(void)
   /* USER CODE BEGIN UART4_Init 2 */
 
   /* USER CODE END UART4_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA2_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA2_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
 
 }
 
@@ -865,7 +904,7 @@ bool debounce(volatile bool* boton){
 	//static bool first_time = true;
 
 	if(*boton == true){
-		if((HAL_GetTick() - counter) > 100 && HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0)){ //No es rebote
+		if((HAL_GetTick() - counter) > 50 && HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0)){ //No es rebote
 			counter = HAL_GetTick();
 			*boton = false;
 			return true;
@@ -878,15 +917,6 @@ bool debounce(volatile bool* boton){
 		return false;
 	}
 
-}
-
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
-	if (GPIO_Pin == GPIO_PIN_0){
-			boton = true;
-	}else if (GPIO_Pin == GPIO_PIN_1)
-		giraDerecha();
-	else if (GPIO_Pin == GPIO_PIN_2)
-		giraIzquierda();
 }
 
 void gameOver(){
