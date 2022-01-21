@@ -64,6 +64,7 @@ uint8_t slave_address_write = 0x78;
 uint8_t slave_address_read = 0x78 | 0x01;
 uint8_t i2cTxBuf[2];
 uint8_t i2cRxBuf;
+uint8_t uartTxBuf = 11U;
 bool COM_ERROR = false; //Indica error de comunicación I2C con el display
 bool UART_ERROR = false; //Indica error de envío UART
 
@@ -80,8 +81,8 @@ volatile bool refresh = false; //Actualizado por interrupciones de teporizador, 
 				      //frame y que el display debe ser actualizado
 
 //Cuerpo de la serpiente
-#define LONGITUD_INICIAL 10
-#define LONGITUD_MAXIMA 99
+#define LONGITUD_INICIAL 10U
+#define LONGITUD_MAXIMA 99U
 struct modulo{ //La serpiente estará compuesta por módulos, las frutas serán módulos individuales
 	uint8_t x;
 	uint8_t y;
@@ -233,6 +234,8 @@ int main(void)
   uint8_t last_pot_read = pot_read;
   if(HAL_HalfDuplex_EnableTransmitter(&huart4) != HAL_OK)
 	  UART_ERROR = true;
+  if(HAL_UART_Transmit(&huart4, &s_Longitud, 1, HAL_MAX_DELAY) != HAL_OK)
+  				UART_ERROR = true;
 
   while (1)
   {
@@ -479,13 +482,13 @@ static void MX_UART4_Init(void)
 
   /* USER CODE END UART4_Init 1 */
   huart4.Instance = UART4;
-  huart4.Init.BaudRate = 115200;
+  huart4.Init.BaudRate = 9600;
   huart4.Init.WordLength = UART_WORDLENGTH_8B;
   huart4.Init.StopBits = UART_STOPBITS_1;
   huart4.Init.Parity = UART_PARITY_NONE;
   huart4.Init.Mode = UART_MODE_TX;
   huart4.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart4.Init.OverSampling = UART_OVERSAMPLING_8;
+  huart4.Init.OverSampling = UART_OVERSAMPLING_16;
   if (HAL_HalfDuplex_Init(&huart4) != HAL_OK)
   {
     Error_Handler();
@@ -864,8 +867,10 @@ void avanzaSerpiente(){
 			s_Longitud++;
 			serpiente[s_Longitud - 1].x = serpiente[s_Longitud - 2].x - (serpiente[s_Longitud - 3].x - serpiente[s_Longitud - 2].x);
 			serpiente[s_Longitud - 1].y = serpiente[s_Longitud - 2].y - (serpiente[s_Longitud - 3].y - serpiente[s_Longitud - 2].y);
-			if(HAL_UART_Transmit(&huart4, &s_Longitud, sizeof(s_Longitud), HAL_MAX_DELAY) != HAL_OK)
+			//unsigned char buf = 'a';
+			if(HAL_UART_Transmit(&huart4, &s_Longitud, 1, HAL_MAX_DELAY) != HAL_OK)
 				UART_ERROR = true;
+			//uartTxBuf++;
 			break;
 	}
 
@@ -939,6 +944,8 @@ void initGame(){
 	setFrutas();
 	transferMapToBuffer();
 	display();
+	if(HAL_UART_Transmit(&huart4, &s_Longitud, 1, HAL_MAX_DELAY) != HAL_OK)
+		UART_ERROR = true;
 }
 
 
