@@ -98,7 +98,8 @@ modulo frutas[N_FRUTAS]; //Contiene todas las frutas actuales
 #define s_IZQUIERDA 'i'
 #define s_ARRIBA 'u'
 #define s_ABAJO 'd'
-uint8_t s_Sentido = s_DERECHA; //Almacena el estado de la serpiente (en qué dirección se está moviendo).
+#define s_SENTIDO_INICIAL s_ARRIBA
+uint8_t s_Sentido = s_SENTIDO_INICIAL; //Almacena el estado de la serpiente (en qué dirección se está moviendo).
 
 //VARIABLES BOTON
 volatile bool boton = false;
@@ -223,16 +224,20 @@ int main(void)
 
   oled_init(); //INICIALIZACIÓN OBLIGATORIA
   /* USER CODE END 2 */
+
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   initGame();
   HAL_TIM_Base_Start_IT(&htim7);
   HAL_ADC_Start_DMA(&hadc1, &adc_buffer, 1);
   uint8_t last_pot_read = pot_read;
+  if(HAL_HalfDuplex_EnableTransmitter(&huart4) != HAL_OK)
+	  UART_ERROR = true;
 
   while (1)
   {
     /* USER CODE END WHILE */
+
     /* USER CODE BEGIN 3 */
 	  uint32_t count = HAL_GetTick();
 	  while(HAL_GetTick() - count < 120000){ //Se apaga automáticamente para ahorrar energía,
@@ -732,7 +737,7 @@ void setLayout(){
 }
 
 void init_serpiente(){
-	s_Sentido = s_DERECHA;
+	s_Sentido = s_SENTIDO_INICIAL;
 	for(int i = 0; i < s_Longitud; i++){
 		serpiente[i].x = ancho_display / 2 -i;
 		serpiente[i].y = alto_display / 2;
